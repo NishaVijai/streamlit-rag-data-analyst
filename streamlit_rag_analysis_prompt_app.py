@@ -1,4 +1,5 @@
 import os
+import glob
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -17,16 +18,11 @@ load_dotenv()
 st.title("💬📊 Streamlit RAG Data Analyst")
 
 # -------------------
-# 📂 SAMPLE DATASET PATH
-# -------------------
-DEFAULT_CSV_PATH = "Sales.csv"
-
-# -------------------
-# 🧠 USER INFO (IMPORTANT UX CLARITY)
+# 🧠 USER INFO
 # -------------------
 st.info(
-    "📊 This app is running on a **sample dataset by default (Sales.csv)**. "
-    "You can upload your own CSV file below to analyze your data."
+    "📊 This app runs on a **sample dataset by default (auto-loaded from repo CSV)**. "
+    "You can upload your own CSV below to override it."
 )
 
 
@@ -92,16 +88,35 @@ def sanitize_user_input(text: str) -> str:
 
 
 # -------------------
-# 📊 LOAD DATA (AUTO + UPLOAD OVERRIDE)
+# 📊 LOAD DATA (BULLETPROOF CSV HANDLING)
 # -------------------
+
 uploaded_file = st.file_uploader("Upload your own CSV (optional)", type=["csv"])
+
+
+def load_default_csv():
+    csv_files = glob.glob("*.csv")  # 🔥 bulletproof fix
+
+    if not csv_files:
+        st.error("No CSV file found in repository. Please upload a CSV file.")
+        st.stop()
+
+    # Prefer sales.csv if exists
+    for f in csv_files:
+        if f.lower() == "sales.csv":
+            return pd.read_csv(f)
+
+    # Otherwise fallback to first CSV found
+    return pd.read_csv(csv_files[0])
+
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.success("Using uploaded dataset")
 else:
-    df = pd.read_csv(DEFAULT_CSV_PATH)
-    st.info("Using sample dataset (Sales.csv) — upload your own file to override")
+    df = load_default_csv()
+    st.info("Using sample dataset from repo (auto-detected CSV file)")
+
 
 # -------------------
 # VALIDATION
@@ -112,19 +127,22 @@ if not all(col in df.columns for col in required_cols):
     st.error("CSV must contain the columns: month, sales")
     st.stop()
 
+
 # -------------------
-# 📊 DATA VIEW (OPTIONAL EXPANDER ONLY)
+# 📊 DATA VIEW (OPTIONAL)
 # -------------------
 with st.expander("📊 View Dataset (Click to expand)"):
     st.dataframe(df)
 
+
 # -------------------
-# 📈 CHART (ALWAYS VISIBLE)
+# 📈 CHART
 # -------------------
 st.subheader("📈 Sales Trend")
 
 fig = px.line(df, x="month", y="sales", title="Sales Over Time", markers=True)
 st.plotly_chart(fig)
+
 
 # -------------------
 # LOAD PROMPT FROM SECRETS
@@ -137,6 +155,7 @@ prompt_template = yaml.safe_load(st.secrets["analysis_prompt"])
 
 system_prompt = prompt_template["system_prompt"]
 analysis_prompt = prompt_template["analysis_prompt"]
+
 
 # -------------------
 # MODEL SELECTION
@@ -156,6 +175,7 @@ if not github_token:
     st.error(f"Missing API key: {token_env_key}")
     st.stop()
 
+
 # -------------------
 # CHAT MEMORY
 # -------------------
@@ -167,6 +187,7 @@ st.subheader("💬 Chat with your data")
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
+
 
 # -------------------
 # USER INPUT
@@ -184,9 +205,6 @@ if user_input:
     # -------------------
     relevant_df = retrieve_relevant_data(df, safe_input)
 
-    # -------------------
-    # 🧠 DEBUG PANEL (OPTIONAL, CLEAN UI)
-    # -------------------
     with st.expander("🧠 View RAG Retrieval (Debug Mode)", expanded=False):
         st.dataframe(relevant_df)
 
