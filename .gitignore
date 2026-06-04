@@ -5,7 +5,7 @@
 # Environment variables
 .env
 
-# Streamlit secrets
+# Streamlit secrets (IMPORTANT)
 .streamlit/secrets.toml
 
 # Python cache
@@ -20,15 +20,11 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# macOS
+# OS files
 .DS_Store
 
 # Logs
 *.log
-
-# Temporary files
-*.tmp
-*.temp
 
 # Build artifacts
 build/
@@ -40,5 +36,8 @@ dist/
 .coverage
 htmlcov/
 
-# Python version managers
+# Python version
 .python-version
+
+# ❌ REMOVE YAML PROMPTS FROM PUBLIC REPO
+analysis_prompt.yml
