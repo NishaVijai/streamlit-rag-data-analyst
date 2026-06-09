@@ -1,0 +1,13 @@
+month,sales,marketing_spend,new_customers,returns
+Jan,100,20,12,2
+Feb,120,25,15,1
+Mar,140,30,18,3
+Apr,130,28,16,5
+May,170,35,22,2
+Jun,200,40,28,1
+Jul,210,42,30,2
+Aug,230,45,35,4
+Sep,220,43,33,6
+Oct,250,50,38,3
+Nov,290,55,45,2
+Dec,340,65,60,4

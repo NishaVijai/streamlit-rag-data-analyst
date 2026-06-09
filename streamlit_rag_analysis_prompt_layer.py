@@ -1,74 +1,89 @@
 import pandas as pd
 
+
 def retrieve_relevant_data(df, question):
+    """
+    Generic retrieval layer that works across
+    multiple CSV schemas.
+    """
 
     q = question.lower()
-
-    # Work on copy
     temp_df = df.copy()
 
-    months = [
-        "jan", "feb", "mar",
-        "apr", "may", "jun"
-    ]
+    numeric_cols = temp_df.select_dtypes(include="number").columns.tolist()
+
+    text_cols = [c for c in temp_df.columns if c not in numeric_cols]
 
     # -------------------
-    # Highest Sales
+    # Highest
     # -------------------
-    if "highest" in q or "best" in q:
-        return temp_df.nlargest(3, "sales")
+    if any(word in q for word in ["highest", "best", "top", "maximum"]):
+
+        if numeric_cols:
+            metric = numeric_cols[0]
+
+            return temp_df.nlargest(min(5, len(temp_df)), metric)
 
     # -------------------
-    # Lowest Sales
+    # Lowest
     # -------------------
-    elif "lowest" in q or "worst" in q:
-        return temp_df.nsmallest(3, "sales")
+    if any(word in q for word in ["lowest", "worst", "minimum"]):
+
+        if numeric_cols:
+            metric = numeric_cols[0]
+
+            return temp_df.nsmallest(min(5, len(temp_df)), metric)
 
     # -------------------
-    # Average Sales
+    # Average
     # -------------------
-    elif "average" in q or "mean" in q:
-        return pd.DataFrame({
-            "metric": ["Average Sales"],
-            "value": [temp_df["sales"].mean()]
-        })
+    if any(word in q for word in ["average", "mean"]):
+
+        rows = []
+
+        for col in numeric_cols:
+
+            rows.append({"metric": col, "average": round(temp_df[col].mean(), 2)})
+
+        return pd.DataFrame(rows)
 
     # -------------------
-    # Total Sales
+    # Total
     # -------------------
-    elif "total" in q or "sum" in q:
-        return pd.DataFrame({
-            "metric": ["Total Sales"],
-            "value": [temp_df["sales"].sum()]
-        })
+    if any(word in q for word in ["total", "sum"]):
 
-    # -------------------
-    # Growth Analysis
-    # -------------------
-    elif "growth" in q or "trend" in q:
+        rows = []
 
-        temp_df["growth_pct"] = (
-            temp_df["sales"]
-            .pct_change() * 100
-        ).round(2)
+        for col in numeric_cols:
 
-        return temp_df
+            rows.append({"metric": col, "total": round(temp_df[col].sum(), 2)})
+
+        return pd.DataFrame(rows)
 
     # -------------------
-    # Specific Month Search
+    # Growth / Trend
     # -------------------
-    elif any(month in q for month in months):
+    if any(word in q for word in ["growth", "trend"]):
 
-        for month in months:
+        result = temp_df.copy()
 
-            if month in q:
+        for col in numeric_cols:
 
-                return temp_df[
-                    temp_df["month"]
-                    .str.lower() == month
-                ]
+            result[f"{col}_growth_pct"] = (result[col].pct_change() * 100).round(2)
+
+        return result
 
     # -------------------
-    # Fallback
+    # Column Search
     # -------------------
+    for col in text_cols:
+
+        values = temp_df[col].astype(str).str.lower().unique()
+
+        for val in values:
+
+            if val in q:
+
+                return temp_df[temp_df[col].astype(str).str.lower() == val]
+
     return temp_df
