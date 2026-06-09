@@ -98,6 +98,7 @@ streamlit run streamlit_rag_analysis_prompt_app.py
 Create a `.env` file for local development:
 
 GITHUB_TOKEN_GPT_MINI=your_token_here
+
 GITHUB_TOKEN_LLAMA_INSTRUCT=your_token_here
 
 ---
