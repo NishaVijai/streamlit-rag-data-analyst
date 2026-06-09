@@ -30,7 +30,7 @@ It transforms raw data into:
 
 ## 📸 UI Preview
 
-Add your screenshot below:
+<img width="3840" height="1960" alt="Streamlit RAG Data Analyst · Streamlit" src="https://github.com/user-attachments/assets/5c3d9a31-a615-4475-a42b-4d16836fc1c9" />
 
 ---
 
