@@ -44,7 +44,6 @@ def load_model_selector(prompt_template):
     # DEFAULT INDEX
     # -------------------
     default_index = 0
-
     if default_model in available_models:
         default_index = available_models.index(default_model)
 
@@ -53,24 +52,24 @@ def load_model_selector(prompt_template):
     # -------------------
     selected_model = st.selectbox("Choose LLM", available_models, index=default_index)
 
+    st.caption(f"Active model: {selected_model}")
+
     # -------------------
     # TOKEN RESOLUTION
     # -------------------
     token_key = model_map.get(selected_model)
 
     if not token_key:
-        st.error(f"Unsupported model: {selected_model}")
+        st.error(f"Unsupported model selected: {selected_model}")
         st.stop()
 
     github_token = st.secrets.get(token_key) or os.getenv(token_key)
 
     if not github_token:
-        st.error(f"Missing API key: {token_key}")
+        st.error(
+            f"Missing API key for model '{selected_model}'. "
+            f"Expected env/secrets key: {token_key}"
+        )
         st.stop()
-
-    # -------------------
-    # DEBUG INFO (optional)
-    # -------------------
-    st.caption(f"Active Model: {selected_model}")
 
     return selected_model, github_token

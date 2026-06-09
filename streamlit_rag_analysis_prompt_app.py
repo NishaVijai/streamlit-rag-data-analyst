@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -11,9 +10,8 @@ from streamlit_rag_analysis_prompt_layer import retrieve_relevant_data
 from model_selector import load_model_selector
 
 # -------------------
-# Setup
+# SETUP
 # -------------------
-
 load_dotenv()
 
 st.set_page_config(
@@ -23,6 +21,24 @@ st.set_page_config(
 st.title("💬📊 Streamlit RAG Data Analyst")
 
 st.info("Choose a sample dataset or upload your own CSV.")
+
+# -------------------
+# FILE SIZE GUARDRAIL
+# -------------------
+MAX_FILE_SIZE_MB = 5
+
+
+def validate_file(uploaded_file):
+    if uploaded_file is not None:
+        size_mb = uploaded_file.size / (1024 * 1024)
+
+        if size_mb > MAX_FILE_SIZE_MB:
+            st.error(
+                f"File too large ({size_mb:.2f}MB). "
+                f"Please upload a file smaller than {MAX_FILE_SIZE_MB}MB."
+            )
+            st.stop()
+
 
 # -------------------
 # DATASETS
@@ -150,9 +166,8 @@ def sanitize_user_input(text):
 
 
 # -------------------
-# DATA SELECTION
+# DATA SELECTION UI
 # -------------------
-
 st.subheader("📂 Dataset")
 
 selected_dataset = st.selectbox("Choose sample dataset", list(DATASETS.keys()))
@@ -165,57 +180,57 @@ with st.expander("💡 Example Questions"):
 
         st.markdown(f"- {q}")
 
-uploaded_file = st.file_uploader("Upload your own CSV", type=["csv"])
+uploaded_file = st.file_uploader("Upload your own CSV (optional)", type=["csv"])
+
+# -------------------
+# CACHED DATA LOADING (NEW)
+# -------------------
+
+
+@st.cache_data(show_spinner=False)
+def load_csv(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
+
 
 # -------------------
 # LOAD DATA
 # -------------------
+df = None
 
-if uploaded_file:
-
+if uploaded_file is not None:
+    validate_file(uploaded_file)
     df = pd.read_csv(uploaded_file)
-
     st.success("Using uploaded dataset")
 
 else:
-
-    df = pd.read_csv(DATASETS[selected_dataset]["file"])
-
+    # df = pd.read_csv(DATASETS[selected_dataset]["file"])
+    df = load_csv(DATASETS[selected_dataset]["file"])
     st.success(f"Using sample dataset: {selected_dataset}")
 
 # -------------------
 # VALIDATION
 # -------------------
-
 if df.empty:
-
     st.error("Dataset is empty")
     st.stop()
 
 if len(df.columns) < 2:
-
-    st.error("Dataset requires at least 2 columns")
-
+    st.error("Dataset must contain at least 2 columns")
     st.stop()
 
 # -------------------
 # DATA VIEW
 # -------------------
-
 with st.expander("📊 View Dataset", expanded=False):
-
     st.dataframe(df, width="stretch")
 
 # -------------------
 # DYNAMIC CHART
 # -------------------
-
 numeric_cols = df.select_dtypes(include="number").columns.tolist()
-
 non_numeric_cols = [c for c in df.columns if c not in numeric_cols]
 
 if numeric_cols and non_numeric_cols:
-
     x_col = non_numeric_cols[0]
     y_col = numeric_cols[0]
 
@@ -226,132 +241,132 @@ if numeric_cols and non_numeric_cols:
     st.plotly_chart(fig, width="stretch")
 
 # -------------------
-# PROMPTS
+# PROMPT CONFIG
 # -------------------
-
 if "analysis_prompt" not in st.secrets:
-
     st.error("Missing analysis_prompt in secrets")
-
     st.stop()
 
 prompt_template = yaml.safe_load(st.secrets["analysis_prompt"])
 
 system_prompt = prompt_template["system_prompt"]
-
 analysis_prompt = prompt_template["analysis_prompt"]
 
 # -------------------
-# MODELS
+# MODEL CONFIG
 # -------------------
-
 selected_model, github_token = load_model_selector(prompt_template)
+
+if not selected_model or not github_token:
+    st.error("Model configuration failed. Check secrets and prompt YAML.")
+    st.stop()
+
+
+# -------------------
+# SMART CONTEXT BUILDER (IMPORTANT)
+# -------------------
+def build_safe_context(df: pd.DataFrame) -> str:
+    """
+    Prevents LLM overload by sampling + summarizing instead of full dataset.
+    """
+
+    numeric_df = df.select_dtypes(include="number")
+
+    # Case 1: small dataset → safe full sample
+    if len(df) <= 30:
+        return df.to_string(index=False)
+
+    # Case 2: medium dataset → sample rows
+    sample_df = df.sample(n=min(30, len(df)))
+
+    context_parts = [
+        "=== SAMPLE ROWS ===",
+        sample_df.to_string(index=False),
+    ]
+
+    # Case 3: add statistical summary for numeric columns
+    if not numeric_df.empty:
+        context_parts.append("\n=== NUMERIC SUMMARY ===")
+        context_parts.append(numeric_df.describe().to_string())
+
+    return "\n".join(context_parts)
+
 
 # -------------------
 # CHAT MEMORY
 # -------------------
-
 if "messages" not in st.session_state:
-
     st.session_state.messages = []
 
 st.subheader("💬 Chat with your data")
 
 for msg in st.session_state.messages:
-
     with st.chat_message(msg["role"]):
-
         st.write(msg["content"])
 
 # -------------------
 # USER INPUT
 # -------------------
-
 user_input = st.chat_input("Ask about your dataset...")
 
 if user_input:
 
     safe_input = sanitize_user_input(user_input)
 
-    # -------------------
     # Save user message
-    # -------------------
     st.session_state.messages.append({"role": "user", "content": safe_input})
 
     # -------------------
-    # Show immediate "thinking" message
+    # SINGLE CLEAN LOADING FLOW
     # -------------------
-    thinking_placeholder = st.empty()
+    with st.spinner("⏳ Analyzing data and generating insights..."):
 
-    with thinking_placeholder.container():
-        with st.chat_message("assistant"):
-            thinking_msg = st.empty()
-            thinking_msg.info("⏳ Analyzing your data... please wait")
+        try:
+            relevant_df = retrieve_relevant_data(df, safe_input)
+        except Exception as e:
+            st.error(f"RAG retrieval failed: {e}")
+            st.stop()
 
-    # -------------------
-    # RAG RETRIEVAL (with spinner)
-    # -------------------
-    with st.spinner("🔍 Retrieving relevant data..."):
-        relevant_df = retrieve_relevant_data(df, safe_input)
+        safe_context = build_safe_context(relevant_df).strip()
 
-    # Replace thinking text
-    thinking_msg.info("🧠 Generating insights using AI model...")
+        final_prompt = analysis_prompt.format(context=safe_context, question=safe_input)
 
-    # -------------------
-    # DEBUG VIEW (optional)
-    # -------------------
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": final_prompt},
+        ]
+
+        url = "https://models.github.ai/inference/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {"model": selected_model, "messages": messages}
+
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+        except Exception as e:
+            st.error(f"Request failed: {e}")
+            st.stop()
+
+    # OUTSIDE spinner (clean UI separation)
     with st.expander("🧠 View RAG Retrieval"):
         st.dataframe(relevant_df, width="stretch")
 
     # -------------------
-    # PROMPT BUILD
+    # RESPONSE HANDLING (outside spinner)
     # -------------------
-    final_prompt = analysis_prompt.format(
-        context=relevant_df.to_string(index=False), question=safe_input
-    )
+    if response.status_code == 200:
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": final_prompt},
-    ]
+        result = response.json()
+        ai_reply = result["choices"][0]["message"]["content"]
 
-    # -------------------
-    # API CALL (with spinner)
-    # -------------------
-    url = "https://models.github.ai/inference/chat/completions"
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
-    headers = {
-        "Authorization": f"Bearer {github_token}",
-        "Content-Type": "application/json",
-    }
+        st.rerun()
 
-    payload = {"model": selected_model, "messages": messages}
-
-    try:
-        with st.spinner("🤖 Thinking with LLM..."):
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-
-        # -------------------
-        # RESPONSE HANDLING
-        # -------------------
-        if response.status_code == 200:
-
-            result = response.json()
-            ai_reply = result["choices"][0]["message"]["content"]
-
-            # Remove thinking placeholder
-            thinking_placeholder.empty()
-
-            # Save assistant message
-            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-
-            st.rerun()
-
-        else:
-            thinking_placeholder.empty()
-            st.error(f"API Error: {response.status_code}")
-            st.write(response.text)
-
-    except Exception as e:
-        thinking_placeholder.empty()
-        st.error(str(e))
+    else:
+        st.error(f"API Error: {response.status_code}")
+        st.write(response.text)
